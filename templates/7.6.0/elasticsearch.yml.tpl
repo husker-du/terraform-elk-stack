@@ -96,6 +96,9 @@ node.ml: false
 #
 xpack.security.enabled: true
 xpack.security.transport.ssl.enabled: true
-xpack.security.transport.ssl.verification_mode: certificate
-xpack.security.transport.ssl.keystore.path: certs/${cluster_name}
-xpack.security.transport.ssl.truststore.path: certs/${cluster_name}
+xpack.security.transport.ssl.verification_mode: full
+xpack.security.transport.ssl.keystore.path: certs/${node_name}
+xpack.security.transport.ssl.truststore.path: certs/${node_name}
+xpack.security.http.ssl.enabled: true
+xpack.security.http.ssl.keystore.path: certs/${node_name}
+xpack.security.http.ssl.truststore.path: certs/${node_name}

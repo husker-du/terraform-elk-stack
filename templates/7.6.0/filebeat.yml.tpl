@@ -76,7 +76,7 @@ filebeat.config.modules:
   #reload.period: 10s
 
 #==================== Elasticsearch template setting ==========================
-
+setup.template.enabled: false
 #setup.template.settings:
   #index.number_of_shards: 1
   #index.codec: best_compression
@@ -115,7 +115,6 @@ filebeat.config.modules:
 # Starting with Beats version 6.0.0, the dashboards are loaded via the Kibana API.
 # This requires a Kibana endpoint configuration.
 setup.kibana:
-
   # Kibana Host
   # Scheme and port can be left out and will be set to the default (http and 5601)
   # In case you specify and additional path, the scheme is required: http://localhost:5601/path

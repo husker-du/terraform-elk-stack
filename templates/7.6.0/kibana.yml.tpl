@@ -25,7 +25,7 @@ server.host: ${kibana_host}
 server.name: "kibana"
 
 # The URLs of the Elasticsearch instances to use for all your queries.
-elasticsearch.hosts: [ "http://${elastic_host}:${elastic_port}" ]
+elasticsearch.hosts: [ "https://${elastic_host}:${elastic_port}" ]
 
 # When this setting's value is true Kibana uses the hostname specified in the server.host
 # setting. When the value of this setting is false, Kibana uses the hostname of the host
@@ -62,7 +62,7 @@ elasticsearch.password: ${kibana_pwd}
 #elasticsearch.ssl.certificateAuthorities: [ "/path/to/your/CA.pem" ]
 
 # To disregard the validity of SSL certificates, change this setting's value to 'none'.
-#elasticsearch.ssl.verificationMode: full
+elasticsearch.ssl.verificationMode: none
 
 # Time in milliseconds to wait for Elasticsearch to respond to pings. Defaults to the value of
 # the elasticsearch.requestTimeout setting.
