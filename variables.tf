@@ -82,3 +82,27 @@ variable "kibana_pwd" {
   type        = string
   sensitive   = true
 }
+
+variable "ca_pass" {
+  description = "The password of the root CA"
+  type        = string
+  sensitive   = true
+}
+
+variable "cert_pass" {
+  description = "Passwords of the elasticsearch nodes certificates"
+  type        = map(string)
+  sensitive   = true
+}
+
+variable "logstash_pass" {
+  description = "Passwords of the logstash certificate"
+  type        = string
+  sensitive   = true
+}
+
+variable "metricbeat_pass" {
+  description = "Passwords of the metricbeat certificate"
+  type        = string
+  sensitive   = true
+}

@@ -94,12 +94,23 @@ output.elasticsearch:
   hosts: ["${elastic_host}:${elastic_port}"]
 
   # Protocol - either `http` (default) or `https`.
-  #protocol: "https"
+  protocol: "https"
 
   # Authentication credentials - either API key or username/password.
   #api_key: "id:api_key"
   username: "elastic"
   password: "${elastic_pwd}"
+
+  #ssl.verification_mode: none
+
+  # List of root certificates for HTTPS server verifications
+  ssl.certificate_authorities: ["/etc/metricbeat/certs/metricbeat-ca.cert"]
+
+  # Certificate for SSL client authentication
+  ssl.certificate: "/etc/metricbeat/certs/metricbeat.cert"
+
+  # Client Certificate Key
+  ssl.key: "/etc/metricbeat/certs/metricbeat.key"
 
 #----------------------------- Logstash output --------------------------------
 #output.logstash:

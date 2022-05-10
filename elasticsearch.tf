@@ -12,15 +12,14 @@ resource "aws_instance" "elasticsearch_node" {
 
   tags = {
     Name = "es-node-${each.value}"
+    Cluster = "elk"
   }
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Copy the 'elasticsearch.yml' file to the cluster nodes
 # ---------------------------------------------------------------------------------------------------------------------
-data "template_file" "init_elasticsearch" {
-  depends_on = [aws_instance.elasticsearch_node]
-
+data "template_file" "elasticsearch_conf" {
   for_each = aws_instance.elasticsearch_node
 
   template = file("${path.module}/templates/${var.elk_version}/elasticsearch.yml.tpl")
@@ -31,11 +30,11 @@ data "template_file" "init_elasticsearch" {
     master_node    = "master-1"
     node_is_master = one(regexall("master", each.key)) != null ? true : false
     node_is_data   = one(regexall("data", each.key)) != null ? true : false
-    node_is_ingest = one(regexall("master", each.key)) != null ? true : false
+    node_is_ingest = one(regexall("data", each.key)) != null ? true : false
   }
 }
 
-resource "null_resource" "move_elasticsearch_file" {
+resource "null_resource" "move_elasticsearch_conf" {
   for_each = aws_instance.elasticsearch_node
 
   # Changes to an instance of the elasticsearch cluster requires re-provisioning
@@ -51,7 +50,7 @@ resource "null_resource" "move_elasticsearch_file" {
   }
 
   provisioner "file" {
-    content     = data.template_file.init_elasticsearch[each.key].rendered
+    content     = data.template_file.elasticsearch_conf[each.key].rendered
     destination = "elasticsearch.yml"
   }
 }
@@ -83,10 +82,13 @@ resource "null_resource" "move_ssh_private_key_file" {
 # ---------------------------------------------------------------------------------------------------------------------
 # Set up and start up the elasticsearch nodes
 # --------------------------------------------------------------------------------------------------------------------
-resource "null_resource" "start_elasticsearch" {
-  depends_on = [null_resource.move_elasticsearch_file, null_resource.move_ssh_private_key_file]
-
+resource "null_resource" "elasticsearch_setup_node" {
   for_each = aws_instance.elasticsearch_node
+
+  depends_on = [
+    null_resource.move_elasticsearch_conf, 
+    null_resource.move_ssh_private_key_file
+  ]
 
   # Changes to an instance of the elasticsearch cluster requires re-provisioning
   triggers = {
@@ -99,16 +101,109 @@ resource "null_resource" "start_elasticsearch" {
     private_key = file(local_file.save_key_file.filename)
     host        = each.value.public_ip
   }
-
   provisioner "file" {
-    content     = file("${path.module}/scripts/init_elasticsearch_node.sh")
-    destination = "/tmp/init_elasticsearch_node.sh"
+    content     = file("${path.module}/scripts/elasticsearch_setup_node.sh")
+    destination = "/tmp/elasticsearch_setup_node.sh"
+  }
+  provisioner "file" {
+    content     = file("${path.module}/scripts/elasticsearch_setup_passwords.sh")
+    destination = "/tmp/elasticsearch_setup_passwords.sh"
+  }
+  provisioner "remote-exec" {
+    inline = [<<-EOF
+      sudo chmod +x /tmp/elasticsearch_setup_node.sh
+      sudo /tmp/elasticsearch_setup_node.sh \
+          ${var.cluster_name} \
+          ${var.user_name} \
+          ${local_file.save_key_file.filename} \
+          ${var.elk_version} \
+          ${each.key} \
+          ${join(",", values(aws_instance.elasticsearch_node).*.private_ip)} \
+          ${nonsensitive(var.ca_pass)} \
+          ${nonsensitive(var.cert_pass[each.key])} \
+          ${nonsensitive(var.elastic_pwd)}
+      if [[ ${each.key} =~ 'master' ]]; then
+        sudo chmod +x /tmp/elasticsearch_setup_passwords.sh
+        sudo /tmp/elasticsearch_setup_passwords.sh \
+            ${nonsensitive(var.elastic_pwd)}
+      fi
+      EOF
+    ]
+  }
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Set up logstash certificate
+# --------------------------------------------------------------------------------------------------------------------
+resource "null_resource" "elasticsearch_logstash_cert" {
+  depends_on = [ 
+    null_resource.elasticsearch_setup_node["master-1"]
+  ]
+
+  # Changes to an instance of the elasticsearch cluster requires re-provisioning
+  triggers = {
+    instance_id = aws_instance.elasticsearch_node["master-1"].id
   }
 
+  connection {
+    type        = "ssh"
+    user        = var.user_name
+    private_key = file(local_file.save_key_file.filename)
+    host        = aws_instance.elasticsearch_node["master-1"].public_ip
+  }
+  provisioner "file" {
+    content     = file("${path.module}/scripts/elasticsearch_logstash_cert.sh")
+    destination = "/tmp/elasticsearch_logstash_cert.sh"
+  }
   provisioner "remote-exec" {
-    inline = [
-      "sudo chmod +x /tmp/init_elasticsearch_node.sh",
-      "sudo /tmp/init_elasticsearch_node.sh ${var.cluster_name} ${var.user_name} ${local_file.save_key_file.filename} ${var.elk_version} ${each.key} ${join(",", values(aws_instance.elasticsearch_node).*.private_ip)}",
+    inline = [<<-EOF
+      sudo chmod +x /tmp/elasticsearch_logstash_cert.sh
+      sudo /tmp/elasticsearch_logstash_cert.sh \
+          "${aws_instance.logstash.private_dns}" \
+          "${aws_instance.logstash.private_ip}" \
+          "${nonsensitive(var.ca_pass)}" \
+          "${nonsensitive(var.logstash_pass)}" \
+          "${local_file.save_key_file.filename}" \
+          "${var.user_name}"
+      EOF
+    ]
+  }
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Set up metric certificate
+# --------------------------------------------------------------------------------------------------------------------
+resource "null_resource" "elasticsearch_metricbeat_cert" {
+  depends_on = [ 
+    null_resource.elasticsearch_setup_node["master-1"]
+  ]
+
+  # Changes to an instance of the elasticsearch cluster requires re-provisioning
+  triggers = {
+    instance_id = aws_instance.elasticsearch_node["master-1"].id
+  }
+
+  connection {
+    type        = "ssh"
+    user        = var.user_name
+    private_key = file(local_file.save_key_file.filename)
+    host        = aws_instance.elasticsearch_node["master-1"].public_ip
+  }
+  provisioner "file" {
+    content     = file("${path.module}/scripts/elasticsearch_metricbeat_cert.sh")
+    destination = "/tmp/elasticsearch_metricbeat_cert.sh"
+  }
+  provisioner "remote-exec" {
+    inline = [<<-EOF
+      sudo chmod +x /tmp/elasticsearch_metricbeat_cert.sh
+      sudo /tmp/elasticsearch_metricbeat_cert.sh \
+          "${aws_instance.filebeat.private_dns}" \
+          "${aws_instance.filebeat.private_ip}" \
+          "${nonsensitive(var.ca_pass)}" \
+          "${nonsensitive(var.metricbeat_pass)}" \
+          "${local_file.save_key_file.filename}" \
+          "${var.user_name}"
+      EOF
     ]
   }
 }
